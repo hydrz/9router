@@ -61,12 +61,19 @@ export function cloakClaudeTools(body) {
   // Client tools first, then CC decoy tools (no overlap: client tools all have _cc suffix)
   const allTools = [...clientDeclarations, ...CC_DECOY_TOOLS];
 
-  // Rename tool_use in message history (all client tools get suffix)
+  // Rename tool_use in message history (only client tools we renamed get suffix)
   const renamedMessages = body.messages?.map(msg => {
     if (!Array.isArray(msg.content)) return msg;
-    const renamedContent = msg.content.map(block =>
-      block.type === "tool_use" ? { ...block, name: suffix(block.name) } : block
-    );
+    const renamedContent = msg.content.map(block => {
+      if (block.type === "tool_use" && typeof block.name === "string") {
+        if (clientToolNames.has(block.name)) return { ...block, name: suffix(block.name) };
+        const lower = block.name.toLowerCase();
+        for (const name of clientToolNames) {
+          if (name.toLowerCase() === lower) return { ...block, name: suffix(name) };
+        }
+      }
+      return block;
+    });
     return { ...msg, content: renamedContent };
   });
 
@@ -76,11 +83,31 @@ export function cloakClaudeTools(body) {
   // tool name, otherwise Claude rejects it: "Tool '<name>' not found in provided tools".
   // Only rewrite when the choice targets one of the client tools we actually
   // renamed — never a decoy/built-in name (those are sent unsuffixed).
-  if (
-    body.tool_choice?.type === "tool" &&
-    clientToolNames.has(body.tool_choice.name)
-  ) {
-    cloakedBody.tool_choice = { ...body.tool_choice, name: suffix(body.tool_choice.name) };
+  if (body.tool_choice) {
+    let choice = body.tool_choice;
+    if (typeof choice === "object" && (choice.type === "function" || choice.function?.name)) {
+      const fnName = choice.function?.name || choice.name;
+      choice = fnName ? { type: "tool", name: fnName } : { type: "auto" };
+    }
+    if (choice.type === "tool" && typeof choice.name === "string") {
+      let targetName = choice.name;
+      if (!clientToolNames.has(targetName)) {
+        const lower = targetName.toLowerCase();
+        for (const name of clientToolNames) {
+          if (name.toLowerCase() === lower) {
+            targetName = name;
+            break;
+          }
+        }
+      }
+      if (clientToolNames.has(targetName)) {
+        cloakedBody.tool_choice = { ...choice, name: suffix(targetName) };
+      } else {
+        cloakedBody.tool_choice = choice;
+      }
+    } else {
+      cloakedBody.tool_choice = choice;
+    }
   }
 
   return {

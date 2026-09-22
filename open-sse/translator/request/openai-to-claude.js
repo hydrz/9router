@@ -308,11 +308,12 @@ function convertOpenAIToolChoice(choice) {
   }
 
   if (typeof choice === "object") {
-    // OpenAI forced tool: { type: "function", function: { name } }.
+    // OpenAI forced tool: { type: "function", function: { name } } or { type: "function", name }.
     // Checked before the native pass-through below, because the OpenAI shape
     // also carries a `.type` ("function") that Claude rejects.
-    if (choice.function?.name) {
-      return { type: "tool", name: choice.function.name };
+    const fnName = choice.function?.name || (choice.type === "function" ? choice.name : null);
+    if (fnName) {
+      return { type: "tool", name: fnName };
     }
     // Already Claude-native — only pass through types Claude actually accepts,
     // so a malformed or unknown type can never leak into the upstream request.

@@ -73,6 +73,33 @@ describe("cloakClaudeTools", () => {
     expect(block.name).toBe(`todo_write${CLAUDE_TOOL_SUFFIX}`);
   });
 
+  it("suffixes forced tool_choice matching case-insensitively (e.g. bash vs Bash)", () => {
+    const { body } = cloakClaudeTools({
+      tools: [{ name: "bash", input_schema: { type: "object", properties: {} } }],
+      tool_choice: { type: "tool", name: "Bash" }
+    });
+    expect(body.tool_choice).toEqual({ type: "tool", name: `bash${CLAUDE_TOOL_SUFFIX}` });
+  });
+
+  it("normalizes and suffixes OpenAI-shaped forced tool_choice on Claude path", () => {
+    const { body } = cloakClaudeTools({
+      tools: [{ name: "bash", input_schema: { type: "object", properties: {} } }],
+      tool_choice: { type: "function", function: { name: "bash" } }
+    });
+    expect(body.tool_choice).toEqual({ type: "tool", name: `bash${CLAUDE_TOOL_SUFFIX}` });
+  });
+
+  it("does not double-suffix tool_use in message history", () => {
+    const { body } = cloakClaudeTools({
+      tools: [{ name: "bash", input_schema: { type: "object", properties: {} } }],
+      messages: [{
+        role: "assistant",
+        content: [{ type: "tool_use", id: "t1", name: `bash${CLAUDE_TOOL_SUFFIX}`, input: {} }]
+      }]
+    });
+    expect(body.messages[0].content[0].name).toBe(`bash${CLAUDE_TOOL_SUFFIX}`);
+  });
+
   it("returns the body unchanged when there are no tools", () => {
     const input = { messages: [{ role: "user", content: "hi" }], tool_choice: { type: "tool", name: "x" } };
     const { body, toolNameMap } = cloakClaudeTools(input);
